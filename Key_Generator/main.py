@@ -19,8 +19,9 @@ cipher = AES.new(pin_hash, AES.MODE_EAX)
 ciphertext = cipher.encrypt(private_key)
 
 # Display the public key
-print('Public key:')
-print(public_key.decode())
+print('Public key')
+with open('keys/public_key.key', 'wb') as file:
+    file.write(public_key)
 
 # Wrap the AES key with the user's public RSA key
 rsa_key = RSA.import_key(public_key)
@@ -31,5 +32,6 @@ encrypted_aes_key = cipher_rsa.encrypt(pin_hash)
 encrypted_private_key = ciphertext + encrypted_aes_key
 
 # Display the encrypted private key and encrypted AES key (for demonstration purposes)
-print('Encrypted private key:')
-print(encrypted_private_key.hex())
+print('Encrypted private key')
+with open('keys/private_key.key', 'wb') as file:
+    file.write(encrypted_private_key)
