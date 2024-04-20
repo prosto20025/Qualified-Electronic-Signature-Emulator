@@ -18,7 +18,7 @@ pin_hash = sha256(pin.encode()).digest()
 cipher = AES.new(pin_hash, AES.MODE_EAX)
 ciphertext = cipher.encrypt(private_key)
 
-# Display the public key
+# Save the public key
 print('Public key')
 with open('keys/public_key.key', 'wb') as file:
     file.write(public_key)
@@ -31,7 +31,7 @@ encrypted_aes_key = cipher_rsa.encrypt(pin_hash)
 # Store the encrypted private key and encrypted AES key on the pendrive
 encrypted_private_key = ciphertext + encrypted_aes_key
 
-# Display the encrypted private key and encrypted AES key (for demonstration purposes)
+# Save the encrypted private key and encrypted AES key
 print('Encrypted private key')
 with open('keys/private_key.key', 'wb') as file:
     file.write(encrypted_private_key)
