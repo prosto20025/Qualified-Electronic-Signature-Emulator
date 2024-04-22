@@ -1,6 +1,12 @@
 import tkinter as tk
 from tkinter import filedialog
-from tkinter import ttk  # Import themed tkinter for more modern look
+from tkinter import ttk
+import psutil
+import os
+from Crypto.PublicKey import RSA
+from Crypto.Cipher import AES, PKCS1_OAEP
+from hashlib import sha256
+from Crypto.Util.number import bytes_to_long
 
 # Create main Tkinter window
 root = tk.Tk()
@@ -26,8 +32,32 @@ def open_file(entry):
     entry.delete(0, tk.END)
     entry.insert(0, file_path)
 
+def open_new_window_sign_document():
+    root.withdraw()  # Hide the main window
+    new_window = tk.Toplevel(root)
+    new_window.geometry("500x300")
+    new_window.title("Sign Document")
+
+    detected_label = tk.Label(new_window, text="Detected USB with key file")
+    detected_label.pack(pady=10)
+
+    pin_label = tk.Label(new_window, text="Enter your PIN:")
+    pin_label.pack(pady=10)
+
+    pin_entry = tk.Entry(new_window, show="*")
+    pin_entry.pack(pady=5)
+
+    button_frame = tk.Frame(new_window)
+    button_frame.pack(pady=10)
+
+    sign_button = ttk.Button(button_frame, text="Enter PIN", command=lambda: sign_document(pin_entry.get()))
+    sign_button.grid(row=0, column=0, padx=5)
+
+    back_button = ttk.Button(button_frame, text="Back", command=lambda: back_to_main(root, new_window))
+    back_button.grid(row=0, column=1, padx=5)
+
 # Define a function to close the current window and open a new one
-def open_new_window():
+def open_new_window_verify_signature():
     root.withdraw()  # Hide the main window
     new_window = tk.Toplevel(root)
     new_window.geometry("500x130")
@@ -67,6 +97,9 @@ def back_to_main(root, window):
 def encrypt(file_path):
     print(f"Encrypting file: {file_path}")
 
+def sign_document(file_path):
+    print(f"Signing file: {file_path}")
+
 def decrypt(file_path):
     print(f"Decrypting file: {file_path}")
 
@@ -74,8 +107,8 @@ def verify(key_path, xml_path):
     print(f"Verifying with key: {key_path} and xml: {xml_path}")
 
 # Create buttons with themed style
-sign_button = ttk.Button(frame, text="Sign document", style='Accent.TButton')
-verify_button = ttk.Button(frame, text="Verify signature", style='Accent.TButton', command=open_new_window)
+sign_button = ttk.Button(frame, text="Sign document", state=tk.DISABLED, style='Accent.TButton', command=open_new_window_sign_document)
+verify_button = ttk.Button(frame, text="Verify signature", style='Accent.TButton', command=open_new_window_verify_signature)
 encrypt_button = ttk.Button(frame, text="Encrypt", style='Accent.TButton', command=lambda: open_file_dialog(encrypt))
 decrypt_button = ttk.Button(frame, text="Decrypt", style='Accent.TButton', command=lambda: open_file_dialog(decrypt))
 
