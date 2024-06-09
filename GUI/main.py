@@ -1,11 +1,13 @@
 import tkinter as tk
-from tkinter import filedialog
+from tkinter import filedialog, messagebox
 from tkinter import ttk
 import psutil
 import os
 from Crypto.PublicKey import RSA
 from Crypto.Cipher import AES, PKCS1_OAEP
 from hashlib import sha256
+
+from Crypto.Random import get_random_bytes
 from Crypto.Util.number import bytes_to_long
 
 # Create main Tkinter window
@@ -110,8 +112,69 @@ def back_to_main(root, window):
     window.destroy()  # Destroy the new window
     root.deiconify()  # Show the main window again
 
-def encrypt(file_path):
-    print(f"Encrypting file: {file_path}")
+def open_new_window_encrypt_file():
+    root.withdraw()  # Hide the main window
+    new_window = tk.Toplevel(root)
+    new_window.geometry("500x300")
+    new_window.title("Encrypt File")
+
+    file_label = tk.Label(new_window, text="Select file to encrypt:")
+    file_label.pack(pady=10)
+
+    file_entry = ttk.Entry(new_window, width=50)
+    file_entry.pack(pady=5)
+    file_button = ttk.Button(new_window, text="...", width=5, command=lambda: open_file(file_entry))
+    file_button.pack(pady=5)
+
+    key_label = tk.Label(new_window, text="Select RSA public key file:")
+    key_label.pack(pady=10)
+
+    key_entry = ttk.Entry(new_window, width=50)
+    key_entry.pack(pady=5)
+    key_button = ttk.Button(new_window, text="...", width=5, command=lambda: open_file(key_entry))
+    key_button.pack(pady=5)
+
+    button_frame = tk.Frame(new_window)
+    button_frame.pack(pady=10)
+
+    encrypt_button = ttk.Button(button_frame, text="Encrypt", command=lambda: encrypt_file(file_entry.get(), key_entry.get()))
+    encrypt_button.grid(row=0, column=0, padx=5)
+
+    back_button = ttk.Button(button_frame, text="Back", command=lambda: back_to_main(root, new_window))
+    back_button.grid(row=0, column=1, padx=5)
+
+
+def encrypt_file(file_path, key_path):
+    try:
+        # Generate a random AES key
+        aes_key = get_random_bytes(32)
+
+        # Encrypt the file
+        with open(file_path, 'rb') as f:
+            file_data = f.read()
+        cipher = AES.new(aes_key, AES.MODE_EAX)
+        ciphertext, tag = cipher.encrypt_and_digest(file_data)
+
+        # Save the encrypted file
+        encrypted_file_path = file_path + '.enc'
+        with open(encrypted_file_path, 'wb') as f:
+            for x in (cipher.nonce, tag, ciphertext):
+                f.write(x)
+
+        # Encrypt the AES key with the selected RSA public key
+        with open(key_path, 'rb') as f:
+            public_key = RSA.import_key(f.read())
+        cipher_rsa = PKCS1_OAEP.new(public_key)
+        encrypted_aes_key = cipher_rsa.encrypt(aes_key)
+
+        # Save the encrypted AES key
+        encrypted_key_path = encrypted_file_path + '.key'
+        with open(encrypted_key_path, 'wb') as f:
+            f.write(encrypted_aes_key)
+
+        messagebox.showinfo("Success", f"File encrypted. Saved at {encrypted_file_path}")
+    except Exception as e:
+        messagebox.showerror("Error", str(e))
 
 def sign_document(file_path):
     print(f"Signing file: {file_path}")
@@ -125,7 +188,7 @@ def verify(key_path, xml_path):
 # Create buttons with themed style
 sign_button = ttk.Button(frame, text="Sign document", state=tk.DISABLED, style='Accent.TButton', command=open_new_window_sign_document)
 verify_button = ttk.Button(frame, text="Verify signature", style='Accent.TButton', command=open_new_window_verify_signature)
-encrypt_button = ttk.Button(frame, text="Encrypt", style='Accent.TButton', command=lambda: open_file_dialog(encrypt))
+encrypt_button = ttk.Button(frame, text="Encrypt", style='Accent.TButton', command=open_new_window_encrypt_file)
 decrypt_button = ttk.Button(frame, text="Decrypt", style='Accent.TButton', command=lambda: open_file_dialog(decrypt))
 
 # Place buttons in the frame with padding
