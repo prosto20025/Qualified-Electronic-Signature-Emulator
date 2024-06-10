@@ -4,6 +4,9 @@ from tkinter import filedialog, messagebox
 from tkinter import ttk
 import psutil
 import os
+
+from Crypto.Hash import SHA256
+from Crypto.Signature import pkcs1_15
 from Crypto.Util.Padding import pad
 from Crypto.Random import get_random_bytes
 from Crypto.PublicKey import RSA
@@ -104,10 +107,9 @@ def open_new_window_sign_document():
                 # Sign the document hash using PKCS1_OAEP
                 cipher_rsa = PKCS1_OAEP.new(private_key)
                 signature = cipher_rsa.encrypt(doc_hash)
-                signature_hex = signature.hex()
 
                 # Create XML signature file
-                create_xml_signature(file_to_sign, doc_hash, signature_hex, timestamp)
+                create_xml_signature(file_to_sign, doc_hash, signature, timestamp)
 
                 messagebox.showinfo("Success", "Document signed successfully.")
 
@@ -166,6 +168,10 @@ def open_new_window_verify_signature():
     xml_entry = ttk.Entry(new_window, width=50)  # Adjust width
     xml_button = ttk.Button(new_window, text="...", width=5, command=lambda: open_file(xml_entry))
 
+    doc_label = tk.Label(new_window, text="Document  file")
+    doc_entry = ttk.Entry(new_window, width=50)  # Adjust width
+    doc_button = ttk.Button(new_window, text="...", width=5, command=lambda: open_file(doc_entry))
+
     key_label.grid(row=0, column=0, pady=5, padx=5)  # Add padding
     key_entry.grid(row=0, column=1, pady=5, padx=5)  # Add padding
     key_button.grid(row=0, column=2, pady=5, padx=5)  # Add padding
@@ -174,11 +180,15 @@ def open_new_window_verify_signature():
     xml_entry.grid(row=1, column=1, pady=5, padx=5)  # Add padding
     xml_button.grid(row=1, column=2, pady=5, padx=5)  # Add padding
 
+    doc_label.grid(row=2, column=0, pady=5, padx=5)  # Add padding
+    doc_entry.grid(row=2, column=1, pady=5, padx=5)  # Add padding
+    doc_button.grid(row=2, column=2, pady=5, padx=5)  # Add padding
+
     # Create a frame to contain the buttons
     button_frame = tk.Frame(new_window)
-    button_frame.grid(row=2, columnspan=3, pady=10)
+    button_frame.grid(row=3, columnspan=3, pady=10)
 
-    verify_button = ttk.Button(button_frame, text="Verify", command=lambda: verify(key_entry.get(), xml_entry.get()))
+    verify_button = ttk.Button(button_frame, text="Verify", command=lambda: verify(key_entry.get(), xml_entry.get(), doc_entry.get()))
     verify_button.grid(row=0, column=0, padx=5)
 
     # Create a button to go back to the main window
@@ -428,8 +438,51 @@ def open_new_window_decrypt_file():
     back_button = ttk.Button(button_frame, text="Back", command=lambda: back_to_main(root, new_window))
     back_button.grid(row=0, column=1, padx=5)
 
-def verify(key_path, xml_path):
-    print(f"Verifying with key: {key_path} and xml: {xml_path}")
+def verify(key_path, xml_path, doc_path):
+    try:
+        # Load the public key
+        with open(key_path, 'rb') as key_file:
+            public_key = RSA.import_key(key_file.read())
+
+        # Check if the XML file exists
+        if not os.path.exists(xml_path):
+            print("XML file does not exist.")
+            return False
+
+        # Parse the XML file to extract the signature value
+        tree = ET.parse(xml_path)
+        root = tree.getroot()
+        signature_hex = root.find('./SignatureValue').text
+        if signature_hex is None:
+            print("Signature value not found in the XML.")
+            return False
+        signature_value = bytes.fromhex(signature_hex)
+
+        # Check if the document exists
+        if not os.path.exists(doc_path):
+            print("Document file does not exist.")
+            return False
+
+        # Read and hash the document
+        with open(doc_path, 'rb') as doc_file:
+            document_data = doc_file.read()
+        h = SHA256.new(document_data)
+
+        # Verify the signature
+        try:
+            pkcs1_15.new(public_key).verify(h, signature_value)
+            print("Signature is valid.")
+            return True
+        except (ValueError, TypeError) as e:
+            print(f"Signature is not valid: {str(e)}")
+            return False
+
+    except FileNotFoundError:
+        print("File not found.")
+        return False
+    except Exception as e:
+        print(str(e))
+        return False
 
 # Create buttons with themed style
 sign_button = ttk.Button(frame, text="Sign document", style='Accent.TButton', command=open_new_window_sign_document)
