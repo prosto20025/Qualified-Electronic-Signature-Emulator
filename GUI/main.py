@@ -10,6 +10,8 @@ from Crypto.PublicKey import RSA
 from Crypto.Cipher import AES, PKCS1_OAEP
 from Crypto.Util.Padding import unpad
 from tkinter import messagebox
+from datetime import datetime
+import xml.etree.ElementTree as ET
 
 # Create main Tkinter window
 root = tk.Tk()
@@ -51,28 +53,103 @@ def open_file(entry):
     entry.insert(0, file_path)
 
 def open_new_window_sign_document():
+    def open_signing_window(private_key_path, pin):
+        try:
+            # Decrypt the private key
+            private_key = decrypt_private_key(private_key_path, pin)
+        except IncorrectPINError:
+            messagebox.showerror("Error", "Incorrect PIN provided.")
+            return
+
+        root.withdraw()  # Hide the main window
+        signing_window = tk.Toplevel(root)
+        signing_window.geometry("500x300")
+        signing_window.title("Sign Document")
+
+        key_info_label = tk.Label(signing_window, text="RSA Private Key: " + private_key_path)
+        key_info_label.pack(pady=10)
+
+        detected_label = tk.Label(signing_window, text="Key decryption was successful.")
+        detected_label.pack(pady=10)
+
+        file_label = tk.Label(signing_window, text="Select document to sign:")
+        file_label.pack(pady=10)
+
+        def open_file(entry):
+            file_path = filedialog.askopenfilename()
+            entry.delete(0, tk.END)
+            entry.insert(0, file_path)
+
+        file_entry = ttk.Entry(signing_window, width=50)
+        file_entry.pack(pady=5)
+        file_button = ttk.Button(signing_window, text="...", width=5, command=lambda: open_file(file_entry))
+        file_button.pack(pady=5)
+
+        button_frame = tk.Frame(signing_window)
+        button_frame.pack(pady=10)
+
+        def sign_document():
+            try:
+                # Open the selected file
+                file_to_sign = file_entry.get()
+                with open(file_to_sign, 'rb') as f:
+                    file_data = f.read()
+
+                # Calculate the hash of the document
+                doc_hash = hashlib.sha256(file_data).digest()
+
+                # Generate the timestamp for the signature
+                timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+
+                # Sign the document hash using PKCS1_OAEP
+                cipher_rsa = PKCS1_OAEP.new(private_key)
+                signature = cipher_rsa.encrypt(doc_hash)
+                signature_hex = signature.hex()
+
+                # Create XML signature file
+                create_xml_signature(file_to_sign, doc_hash, signature_hex, timestamp)
+
+                messagebox.showinfo("Success", "Document signed successfully.")
+
+            except Exception as e:
+                messagebox.showerror("Error", str(e))
+
+        sign_button = ttk.Button(button_frame, text="Sign", command=sign_document)
+        sign_button.grid(row=0, column=0, padx=5)
+
+        back_button = ttk.Button(button_frame, text="Back", command=signing_window.destroy)
+        back_button.grid(row=0, column=1, padx=5)
+
     root.withdraw()  # Hide the main window
     new_window = tk.Toplevel(root)
     new_window.geometry("500x300")
     new_window.title("Sign Document")
 
-    detected_label = tk.Label(new_window, text="Detected USB with key file")
-    detected_label.pack(pady=10)
+    key_label = tk.Label(new_window, text="Select RSA private key file:")
+    key_label.pack(pady=10)
+
+    key_entry = ttk.Entry(new_window, width=50)
+    key_entry.pack(pady=5)
+
+    key_button = ttk.Button(new_window, text="...", width=5, command=lambda: open_file(key_entry))
+    key_button.pack(pady=5)
 
     pin_label = tk.Label(new_window, text="Enter your PIN:")
     pin_label.pack(pady=10)
 
-    pin_entry = tk.Entry(new_window, show="*")
+    pin_entry = ttk.Entry(new_window, show="*")
     pin_entry.pack(pady=5)
 
     button_frame = tk.Frame(new_window)
     button_frame.pack(pady=10)
 
-    sign_button = ttk.Button(button_frame, text="Enter PIN", command=lambda: sign_document(pin_entry.get()))
+    sign_button = ttk.Button(button_frame, text="Next", command=lambda: open_signing_window(key_entry.get(), pin_entry.get()))
     sign_button.grid(row=0, column=0, padx=5)
 
-    back_button = ttk.Button(button_frame, text="Back", command=lambda: back_to_main(root, new_window))
+    back_button = ttk.Button(button_frame, text="Back", command=new_window.destroy)
     back_button.grid(row=0, column=1, padx=5)
+
+
 
 # Define a function to close the current window and open a new one
 def open_new_window_verify_signature():
@@ -176,9 +253,34 @@ def encrypt_file(file_path, key_path):
     except Exception as e:
         messagebox.showerror("Error", str(e))
 
-def sign_document(file_path):
-    print(f"Signing file: {file_path}")
 
+def create_xml_signature(file_path, doc_hash, signature, timestamp):
+    # Create XML element for the signature
+    signature_elem = ET.Element("Signature")
+
+    # Add document information
+    doc_info_elem = ET.SubElement(signature_elem, "DocumentInformation")
+    ET.SubElement(doc_info_elem, "FileName").text = os.path.basename(file_path)
+    ET.SubElement(doc_info_elem, "FileSize").text = str(os.path.getsize(file_path))
+    ET.SubElement(doc_info_elem, "FileExtension").text = os.path.splitext(file_path)[1]
+    ET.SubElement(doc_info_elem, "LastModified").text = str(datetime.fromtimestamp(os.path.getmtime(file_path)))
+    ET.SubElement(doc_info_elem, "Timestamp").text = timestamp
+
+    # Add signer information
+    signer_info_elem = ET.SubElement(signature_elem, "SignerInformation")
+    ET.SubElement(signer_info_elem, "Name").text = "User A"  # Replace with actual user name
+    ET.SubElement(signer_info_elem, "Timestamp").text = timestamp
+
+    # Add encrypted hash of the document
+    encrypted_hash_elem = ET.SubElement(signature_elem, "SignatureValue")
+    encrypted_hash_elem.text = str(signature)
+
+    # Write XML tree to file
+    xml_file_path = file_path + ".xml"
+    tree = ET.ElementTree(signature_elem)
+    tree.write(xml_file_path)
+
+    messagebox.showinfo("Success", f"XML signature file created: {xml_file_path}")
 class IncorrectPINError(Exception):
     pass
 def decrypt_private_key(encrypted_key_path, user_pin):
