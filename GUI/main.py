@@ -41,12 +41,12 @@ def check_pendrive():
         if 'removable' in device.opts:
             pendrive_path = device.mountpoint
             for file in os.listdir(pendrive_path):
-                if file.endswith(".key"):
+                if file.endswith(".pem"):
                     key_file_found = True
                     break
             break
     sign_button.config(state=tk.NORMAL if key_file_found else tk.DISABLED)
-    # Schedule the function to run again after 1 second
+    root.after(1000, check_pendrive)
 
 
 # Define a function to open a file dialog
@@ -94,43 +94,32 @@ def open_new_window_sign_document():
         def sign_document():
             try:
                 # Open the selected file
-                file_to_sign = file_entry.get()
-                with open(file_to_sign, "rb") as f:
+                file = file_entry.get()
+                with open(file, "rb") as f:
                     file_data = f.read()
                 document_hash = SHA256.new(file_data)
                 signature = pkcs1_15.new(private_key).sign(document_hash)
                 signature_xml = ET.Element("Signature")
-
-                # General document info
                 document_info = ET.SubElement(signature_xml, "DocumentInfo")
-                document_info.set("file_name", os.path.basename(file_to_sign))
-                document_info.set("file_size", str(os.path.getsize(file_to_sign)))
-                document_info.set("file_extension", os.path.splitext(file_to_sign)[1])
-                document_info.set("modification_time", time.ctime(os.path.getmtime(file_to_sign)))
-
-                # Signer info (basic info for now)
+                document_info.set("file_name", os.path.basename(file))
+                document_info.set("file_size", str(os.path.getsize(file)))
+                document_info.set("file_extension", os.path.splitext(file)[1])
+                document_info.set("modification_time", time.ctime(os.path.getmtime(file)))
                 signer_info = ET.SubElement(signature_xml, "SignerInfo")
                 signer_info.set("name", "User A")
-
-                # Encrypted hash
                 encrypted_hash = ET.SubElement(signature_xml, "EncryptedHash")
                 encrypted_hash.text = base64.b64encode(signature).decode()
-
-                # Timestamp
                 timestamp = ET.SubElement(signature_xml, "Timestamp")
                 timestamp.text = datetime.datetime.now().isoformat()
-
-                # Save XML signature to a file
-                xml_file_path = os.path.splitext(file_to_sign)[0] + "_signature.xml"
+                xml_file_path = os.path.splitext(file)[0] + "_signed.xml"
                 tree = ET.ElementTree(signature_xml)
                 tree.write(xml_file_path)
-
-                messagebox.showinfo(title="Success", message="Document signed successfully. Signature file created")
+                messagebox.showinfo(title="Success", message="Document signed successfully")
             except Exception as e:
                 messagebox.showerror("Error", str(e))
 
-        sign_button = ttk.Button(button_frame, text="Sign", command=sign_document)
-        sign_button.grid(row=0, column=0, padx=5)
+        sign_button2 = ttk.Button(button_frame, text="Sign", command=sign_document)
+        sign_button2.grid(row=0, column=0, padx=5)
 
         back_button = ttk.Button(button_frame, text="Back", command=signing_window.destroy)
         back_button.grid(row=0, column=1, padx=5)
@@ -161,7 +150,7 @@ def open_new_window_sign_document():
     sign_button = ttk.Button(button_frame, text="Next", command=lambda: open_signing_window(key_entry.get(), pin_entry.get()))
     sign_button.grid(row=0, column=0, padx=5)
 
-    back_button = ttk.Button(button_frame, text="Back", command=new_window.destroy)
+    back_button = ttk.Button(button_frame, text="Back", command=lambda: back_to_main(root, new_window))
     back_button.grid(row=0, column=1, padx=5)
 
 
@@ -282,7 +271,7 @@ def create_xml_signature(file_path, private_key):
         file_path = file_path.replace('/', '//')
         file_name = os.path.splitext(os.path.basename(file_path))[0]
         file_path_no_ext, file_extension = os.path.splitext(file_path)
-        signature_file = f"{file_path_no_ext}_signature.xml"
+        signature_file = f"{file_path_no_ext}_signed.xml"
 
         with open(file_path, 'rb') as f:
             file_content = f.read()
@@ -482,7 +471,7 @@ def verify(public_key_path, signature_xml_path, document_path):
         messagebox.showerror("Error", str(e))
 
 # Create buttons with themed style
-sign_button = ttk.Button(frame, text="Sign document", style='Accent.TButton', command=open_new_window_sign_document)
+sign_button = ttk.Button(frame, text="Sign document", state=tk.DISABLED, style='Accent.TButton', command=open_new_window_sign_document)
 verify_button = ttk.Button(frame, text="Verify signature", style='Accent.TButton', command=open_new_window_verify_signature)
 encrypt_button = ttk.Button(frame, text="Encrypt", style='Accent.TButton', command=open_new_window_encrypt_file)
 decrypt_button = ttk.Button(frame, text="Decrypt", style='Accent.TButton', command=open_new_window_decrypt_file)
@@ -493,5 +482,5 @@ verify_button.pack(pady=10)
 encrypt_button.pack(pady=10)
 decrypt_button.pack(pady=10)
 
-# Run the Tkinter event loop
+root.after(1000, check_pendrive)
 root.mainloop()
