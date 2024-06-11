@@ -1,10 +1,13 @@
+import datetime
 import hashlib
 import tkinter as tk
 from tkinter import filedialog, messagebox
 from tkinter import ttk
 import psutil
 import os
+import base64
 
+import rsa
 from Crypto.Hash import SHA256
 from Crypto.Signature import pkcs1_15
 from Crypto.Util.Padding import pad
@@ -13,8 +16,10 @@ from Crypto.PublicKey import RSA
 from Crypto.Cipher import AES, PKCS1_OAEP
 from Crypto.Util.Padding import unpad
 from tkinter import messagebox
-from datetime import datetime
+import time
+from lxml import etree
 import xml.etree.ElementTree as ET
+
 
 # Create main Tkinter window
 root = tk.Tk()
@@ -78,11 +83,6 @@ def open_new_window_sign_document():
         file_label = tk.Label(signing_window, text="Select document to sign:")
         file_label.pack(pady=10)
 
-        def open_file(entry):
-            file_path = filedialog.askopenfilename()
-            entry.delete(0, tk.END)
-            entry.insert(0, file_path)
-
         file_entry = ttk.Entry(signing_window, width=50)
         file_entry.pack(pady=5)
         file_button = ttk.Button(signing_window, text="...", width=5, command=lambda: open_file(file_entry))
@@ -95,24 +95,37 @@ def open_new_window_sign_document():
             try:
                 # Open the selected file
                 file_to_sign = file_entry.get()
-                with open(file_to_sign, 'rb') as f:
+                with open(file_to_sign, "rb") as f:
                     file_data = f.read()
+                document_hash = SHA256.new(file_data)
+                signature = pkcs1_15.new(private_key).sign(document_hash)
+                signature_xml = ET.Element("Signature")
 
-                # Calculate the hash of the document
-                doc_hash = hashlib.sha256(file_data).digest()
+                # General document info
+                document_info = ET.SubElement(signature_xml, "DocumentInfo")
+                document_info.set("file_name", os.path.basename(file_to_sign))
+                document_info.set("file_size", str(os.path.getsize(file_to_sign)))
+                document_info.set("file_extension", os.path.splitext(file_to_sign)[1])
+                document_info.set("modification_time", time.ctime(os.path.getmtime(file_to_sign)))
 
-                # Generate the timestamp for the signature
-                timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                # Signer info (basic info for now)
+                signer_info = ET.SubElement(signature_xml, "SignerInfo")
+                signer_info.set("name", "User A")
 
-                # Sign the document hash using PKCS1_OAEP
-                cipher_rsa = PKCS1_OAEP.new(private_key)
-                signature = cipher_rsa.encrypt(doc_hash)
+                # Encrypted hash
+                encrypted_hash = ET.SubElement(signature_xml, "EncryptedHash")
+                encrypted_hash.text = base64.b64encode(signature).decode()
 
-                # Create XML signature file
-                create_xml_signature(file_to_sign, doc_hash, signature, timestamp)
+                # Timestamp
+                timestamp = ET.SubElement(signature_xml, "Timestamp")
+                timestamp.text = datetime.datetime.now().isoformat()
 
-                messagebox.showinfo("Success", "Document signed successfully.")
+                # Save XML signature to a file
+                xml_file_path = os.path.splitext(file_to_sign)[0] + "_signature.xml"
+                tree = ET.ElementTree(signature_xml)
+                tree.write(xml_file_path)
 
+                messagebox.showinfo(title="Success", message="Document signed successfully. Signature file created")
             except Exception as e:
                 messagebox.showerror("Error", str(e))
 
@@ -264,33 +277,45 @@ def encrypt_file(file_path, key_path):
         messagebox.showerror("Error", str(e))
 
 
-def create_xml_signature(file_path, doc_hash, signature, timestamp):
-    # Create XML element for the signature
-    signature_elem = ET.Element("Signature")
+def create_xml_signature(file_path, private_key):
+    try:
+        file_path = file_path.replace('/', '//')
+        file_name = os.path.splitext(os.path.basename(file_path))[0]
+        file_path_no_ext, file_extension = os.path.splitext(file_path)
+        signature_file = f"{file_path_no_ext}_signature.xml"
 
-    # Add document information
-    doc_info_elem = ET.SubElement(signature_elem, "DocumentInformation")
-    ET.SubElement(doc_info_elem, "FileName").text = os.path.basename(file_path)
-    ET.SubElement(doc_info_elem, "FileSize").text = str(os.path.getsize(file_path))
-    ET.SubElement(doc_info_elem, "FileExtension").text = os.path.splitext(file_path)[1]
-    ET.SubElement(doc_info_elem, "LastModified").text = str(datetime.fromtimestamp(os.path.getmtime(file_path)))
-    ET.SubElement(doc_info_elem, "Timestamp").text = timestamp
+        with open(file_path, 'rb') as f:
+            file_content = f.read()
+        file_hash = SHA256.new(file_content)
+        imported_private_key = RSA.import_key(private_key)
 
-    # Add signer information
-    signer_info_elem = ET.SubElement(signature_elem, "SignerInformation")
-    ET.SubElement(signer_info_elem, "Name").text = "User A"  # Replace with actual user name
-    ET.SubElement(signer_info_elem, "Timestamp").text = timestamp
+        signature = pkcs1_15.new(imported_private_key).sign(file_hash)
 
-    # Add encrypted hash of the document
-    encrypted_hash_elem = ET.SubElement(signature_elem, "SignatureValue")
-    encrypted_hash_elem.text = str(signature)
+        root_xml = etree.Element("Signature")
+        signed_info_xml = etree.SubElement(root_xml, "SignedInfo")
+        file_name_xml = etree.SubElement(signed_info_xml, "FileName")
+        file_name_xml.text = file_name
+        file_extension_xml = etree.SubElement(signed_info_xml, "FileExtension")
+        file_extension_xml.text = file_extension
+        file_size_xml = etree.SubElement(signed_info_xml, "FileSize")
+        file_size_xml.text = str(os.path.getsize(file_path))
+        file_mod_xml = etree.SubElement(signed_info_xml, "FileModificationTime")
+        file_mod_xml.text = time.ctime(os.path.getctime(file_path))
+        user_info_xml = etree.SubElement(root_xml, "UserInfo")
+        username_xml = etree.SubElement(user_info_xml, "UserName")
+        username_xml.text = os.getlogin()
+        signature_value_xml = etree.SubElement(root_xml, "SignatureValue")
+        signature_value_xml.text = base64.b64encode(signature).decode()
+        timestamp_xml = etree.SubElement(root_xml, "TimeStamp")
+        timestamp_xml.text = time.ctime()
 
-    # Write XML tree to file
-    xml_file_path = file_path + ".xml"
-    tree = ET.ElementTree(signature_elem)
-    tree.write(xml_file_path)
+        with open(signature_file, "wb") as f:
+            f.write(etree.tostring(root_xml, pretty_print=True))
 
-    messagebox.showinfo("Success", f"XML signature file created: {xml_file_path}")
+        messagebox.showinfo("Success", "File successfully signed")
+
+    except Exception as e:
+        messagebox.showerror("Error", f"Signature failed: {e}")
 class IncorrectPINError(Exception):
     pass
 def decrypt_private_key(encrypted_key_path, user_pin):
@@ -438,51 +463,23 @@ def open_new_window_decrypt_file():
     back_button = ttk.Button(button_frame, text="Back", command=lambda: back_to_main(root, new_window))
     back_button.grid(row=0, column=1, padx=5)
 
-def verify(key_path, xml_path, doc_path):
+def verify(public_key_path, signature_xml_path, document_path):
     try:
-        # Load the public key
-        with open(key_path, 'rb') as key_file:
-            public_key = RSA.import_key(key_file.read())
-
-        # Check if the XML file exists
-        if not os.path.exists(xml_path):
-            print("XML file does not exist.")
-            return False
-
-        # Parse the XML file to extract the signature value
-        tree = ET.parse(xml_path)
+        with open(public_key_path, "rb") as f:
+            public_key = RSA.import_key(f.read())
+        tree = ET.parse(signature_xml_path)
         root = tree.getroot()
-        signature_hex = root.find('./SignatureValue').text
-        if signature_hex is None:
-            print("Signature value not found in the XML.")
-            return False
-        signature_value = bytes.fromhex(signature_hex)
-
-        # Check if the document exists
-        if not os.path.exists(doc_path):
-            print("Document file does not exist.")
-            return False
-
-        # Read and hash the document
-        with open(doc_path, 'rb') as doc_file:
-            document_data = doc_file.read()
-        h = SHA256.new(document_data)
-
-        # Verify the signature
+        encrypted_hash = base64.b64decode(root.find("EncryptedHash").text)
+        with open(document_path, "rb") as f:
+            document_data = f.read()
+        document_hash = SHA256.new(document_data)
         try:
-            pkcs1_15.new(public_key).verify(h, signature_value)
-            print("Signature is valid.")
-            return True
-        except (ValueError, TypeError) as e:
-            print(f"Signature is not valid: {str(e)}")
-            return False
-
-    except FileNotFoundError:
-        print("File not found.")
-        return False
+            pkcs1_15.new(public_key).verify(document_hash, encrypted_hash)
+            messagebox.showinfo("Success", "The signature is valid.")
+        except (ValueError, TypeError):
+            messagebox.showerror("Error", "The signature is invalid.")
     except Exception as e:
-        print(str(e))
-        return False
+        messagebox.showerror("Error", str(e))
 
 # Create buttons with themed style
 sign_button = ttk.Button(frame, text="Sign document", style='Accent.TButton', command=open_new_window_sign_document)
